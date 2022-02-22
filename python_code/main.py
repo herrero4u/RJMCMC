@@ -12,11 +12,13 @@ from scipy.optimize import curve_fit
 
 
 class Model:
-    """Store model unknowns (nucleus number and coordinates)
+    """Store model unknowns (Voronoï nuclei number and coordinates)
     Attributes:
         x (float list): x coordinate of each nucleus
         y (float list): y coordinate of each nucleus
         npa (int): number of partitions
+        npa_min (int): minimal possible number of partitions
+        npa_max (int): maximal possible number of partitions
     """
 
     def __init__(self):
@@ -24,12 +26,14 @@ class Model:
         """
         self.x = []
         self.y = []
+        self.npa_min = int
+        self.npa_max = int
         self.npa = int
 
     def build_initial_model(self, x_min, x_max, y_dobs):
-        npa_max = 10  # max number of partitions
-        npa_min = 1  # min number of partitions
-        self.npa = np.random.randint(npa_min, npa_max + 1)  # number of partitions
+        self.npa_min = 1  # min number of partitions
+        self.npa_max = 10  # max number of partitions
+        self.npa = np.random.randint(self.npa_min, self.npa_max + 1)  # number of partitions
         print('npa', self.npa)
         for i in range(self.npa):
             self.x.append(np.random.uniform(x_min, x_max))  # x prior distribution
@@ -37,25 +41,62 @@ class Model:
 
     def build_proposed_model(self, current_model_):
         self.npa = current_model_.npa  # number of partitions
-        # If u < 0.33, move, fonction move
-        u = random()
-        if u < 0.33:
+        perturb_type = random()  # random number to choice the perturbation type to apply (birth, death, and move)
+        if perturb_type < 0.33:
+            self.move(current_model_)
+        elif 0.33 <= perturb_type <= 0.66:
+            # self.move(current_model_)
+            self.birth(current_model_)
+        else:
+            self.death(current_model_)
+
+    def move(self, current_model_):
+        print("move")
+        move_type = random()  # random number to choice the move perturbation to apply
+        if move_type < 0.33:  # move all nuclei
             for k in range(self.npa):
                 self.x.append(np.random.normal(current_model_.x[k], 0.7))  # x gaussian perturbation
                 self.y.append(np.random.normal(current_model_.y[k], 8))  # y gaussian perturbation
-        elif 0.33 <= u <= 0.66:
+        elif 0.33 <= move_type <= 0.66:  # move one nucleus in x & y axes
             for k in range(self.npa):
                 self.x.append(current_model_.x[k])
                 self.y.append(current_model_.y[k])
-            move_index = self.x.index(np.random.choice(self.x)) # index of the random point to move
+            move_index = self.x.index(np.random.choice(self.x))  # index of the random point to move
             self.x[move_index] = np.random.normal(self.x[move_index], 2)  # x gaussian perturbation
             self.y[move_index] = np.random.normal(self.y[move_index], 20)  # y gaussian perturbation
-        else:
+        else:  # move one nucleus in x-axis
             for k in range(self.npa):
                 self.x.append(current_model_.x[k])
                 self.y.append(current_model_.y[k])
             move_index = self.x.index(np.random.choice(self.x))  # index of the random point to move
             self.x[move_index] = np.random.normal(self.x[move_index], 4)  # x gaussian perturbation
+
+    def birth(self, current_model_):
+        self.npa += 1  # ATTENTION : verifier que ça n augmente pas la taille du current model aussi
+        print('npa after birth', self.npa)
+        for k in range(self.npa-1):
+            self.x.append(current_model_.x[k])
+            self.y.append(current_model_.y[k])
+        self.x.append(np.random.uniform(x_min, x_max))  # x prior distribution
+        self.y.append(np.random.uniform(min(y_dobs), max(y_dobs)))  # y prior distribution
+
+    def death(self, current_model_):
+        if self.npa > 1:
+            self.npa -= 1  # ATTENTION : verifier que ça n augmente pas la taille du current model aussi
+            print('npa after death', self.npa)
+            for k in range(self.npa + 1):
+                self.x.append(current_model_.x[k])
+                self.y.append(current_model_.y[k])
+            death_index = self.x.index(np.random.choice(self.x))  # index of the random point to delete
+            del self.x[death_index]
+            del self.y[death_index]
+        else:
+            print('npa = ', self.npa, 'so nothing is done')
+            for k in range(self.npa):
+                self.x.append(current_model_.x[k])
+                self.y.append(current_model_.y[k])
+
+
 
 
 def compute_likelihood(x_dobs, y_dobs, x_i, y_i):
@@ -76,15 +117,15 @@ def draw_fit_curve(initial_model, mean_x, mean_y):
     if initial_model.npa >= 10:
         popt, _ = curve_fit(fifth_polynomial_regression, mean_x, mean_y)
         a, b, c, d, e, f = popt
-        plt.plot(xFit, fifth_polynomial_regression(xFit, *popt), 'purple', label='fit param a=%5')
+        plt.plot(xFit, fifth_polynomial_regression(xFit, *popt), 'purple')
     elif 3 < initial_model.npa < 10:
         popt, _ = curve_fit(second_polynomial_regression, mean_x, mean_y)
         a, b, c = popt
-        plt.plot(xFit, second_polynomial_regression(xFit, *popt), 'purple', label='fit param a=%5')
+        plt.plot(xFit, second_polynomial_regression(xFit, *popt), 'purple')
     elif 1 < initial_model.npa < 4:
         popt, _ = curve_fit(linear_regression, mean_x, mean_y)
         a, b = popt
-        plt.plot(xFit, linear_regression(xFit, *popt), 'purple', label='fit param a=%5')
+        plt.plot(xFit, linear_regression(xFit, *popt), 'purple')
 
 
 # define the true objective function
@@ -156,8 +197,8 @@ current_likelihood = compute_likelihood(x_dobs, y_dobs, initial_model.x, initial
 
 # Set RJMCMC variables
 current_model = initial_model
-burn_in = 10000  # length of the burn-in period
-nsamples = 50000  # total number of samples
+burn_in = 10  # length of the burn-in period
+nsamples = 50  # total number of samples
 accepted_models = 0  # number of accepted models
 rejected_models = 0  # number of rejected models
 model_space = []  # model space we want to sample
@@ -170,17 +211,22 @@ for sample in range(nsamples):
     # Build proposed model with a perturbation from current model
     proposed_model = Model()
     proposed_model.build_proposed_model(current_model)
+    print("proposed model x ", proposed_model.x)
+    print('proposed model y', proposed_model.y)
 
     # Compute likelihood of the proposed model
     proposed_likelihood = compute_likelihood(x_dobs, y_dobs, proposed_model.x, proposed_model.y)
     # print('proposed likelihood', proposed_likelihood)
 
-    # Compute prior of the proposed model (i.e. check if within bounds)
+    # Compute prior of the proposed model (i.e. check if npa, x and y within bounds)
     prior = 1
-    for i in range(len(proposed_model.x)):
-        if proposed_model.x[i] > x_max or proposed_model.x[i] < x_min or \
-                proposed_model.y[i] > y_max or proposed_model.y[i] < y_min:
-            prior = 0
+    if proposed_model.npa < initial_model.npa_min or proposed_model.npa > initial_model.npa_max:
+        prior = 0
+    else:
+        for i in range(len(proposed_model.x)):
+            if proposed_model.x[i] > x_max or proposed_model.x[i] < x_min or \
+                    proposed_model.y[i] > max(y_dobs) or proposed_model.y[i] < min(y_dobs):
+                prior = 0
     # print("prior", prior)
 
     alpha = prior * proposed_likelihood / current_likelihood  # acceptance term
@@ -189,8 +235,10 @@ for sample in range(nsamples):
         current_model = proposed_model
         current_likelihood = proposed_likelihood
         accepted_models += 1
+        print("model accepted")
     else:  # if rejected
         rejected_models += 1
+        print("model rejected")
 
     # Collect models in the chain if burn-in period has passed
     if sample >= burn_in:
@@ -204,6 +252,8 @@ print("acceptance rate", acceptance_rate)
 # Take the mean model from model space
 mean_x = []
 mean_y = []
+npa_number = []
+"""
 for point in range(len(initial_model.x)):
     x = []
     y = []
@@ -217,9 +267,15 @@ for point in range(len(initial_model.x)):
 print("mean x", mean_x)
 print("mean y", mean_y)
 draw_fit_curve(initial_model, mean_x, mean_y)
+"""
+for model in model_space:
+    npa_number.append(model.npa)
+print("npa list", npa_number)
+print('mean', statistics.mean(npa_number))
+print('std', statistics.stdev(npa_number))
 
 # Figure plot
-plt.scatter(x_dobs, y_dobs, c='green', label='observed data')
+#plt.scatter(x_dobs, y_dobs, c='green', label='observed data')
 plt.scatter(initial_model.x, initial_model.y, c='blue', label='initial model')
 plt.scatter(current_model.x, current_model.y, c='orange', label='last model')
 plt.scatter(mean_x, mean_y, c='purple', label='mean model')
