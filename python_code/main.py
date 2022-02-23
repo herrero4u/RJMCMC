@@ -19,6 +19,7 @@ class Model:
         npa (int): number of partitions
         npa_min (int): minimal possible number of partitions
         npa_max (int): maximal possible number of partitions
+        curr_perturbation (str): state of the perturbation at current iteration
     """
 
     def __init__(self):
@@ -29,10 +30,11 @@ class Model:
         self.npa_min = int
         self.npa_max = int
         self.npa = int
+        self.curr_perturbation = str
 
     def build_initial_model(self, x_min, x_max, y_dobs):
         self.npa_min = 1  # min number of partitions
-        self.npa_max = 10  # max number of partitions
+        self.npa_max = 50  # max number of partitions
         self.npa = np.random.randint(self.npa_min, self.npa_max + 1)  # number of partitions
         print('npa', self.npa)
         for i in range(self.npa):
@@ -44,11 +46,13 @@ class Model:
         perturb_type = random()  # random number to choice the perturbation type to apply (birth, death, and move)
         if perturb_type < 0.33:
             self.move(current_model_)
+            self.curr_perturbation = "move"
         elif 0.33 <= perturb_type <= 0.66:
-            # self.move(current_model_)
-            self.birth(current_model_)
+            self.fullrand_birth(current_model_)
+            self.curr_perturbation = "birth"
         else:
-            self.death(current_model_)
+            self.fullrand_death(current_model_)
+            self.curr_perturbation = "death"
 
     def move(self, current_model_):
         print("move")
@@ -71,18 +75,18 @@ class Model:
             move_index = self.x.index(np.random.choice(self.x))  # index of the random point to move
             self.x[move_index] = np.random.normal(self.x[move_index], 4)  # x gaussian perturbation
 
-    def birth(self, current_model_):
-        self.npa += 1  # ATTENTION : verifier que ça n augmente pas la taille du current model aussi
+    def fullrand_birth(self, current_model_):
+        self.npa += 1  # increasing number of partitions
         print('npa after birth', self.npa)
-        for k in range(self.npa-1):
+        for k in range(self.npa - 1):
             self.x.append(current_model_.x[k])
             self.y.append(current_model_.y[k])
         self.x.append(np.random.uniform(x_min, x_max))  # x prior distribution
         self.y.append(np.random.uniform(min(y_dobs), max(y_dobs)))  # y prior distribution
 
-    def death(self, current_model_):
+    def fullrand_death(self, current_model_):
         if self.npa > 1:
-            self.npa -= 1  # ATTENTION : verifier que ça n augmente pas la taille du current model aussi
+            self.npa -= 1  # decreasing number of partitions
             print('npa after death', self.npa)
             for k in range(self.npa + 1):
                 self.x.append(current_model_.x[k])
@@ -96,20 +100,53 @@ class Model:
                 self.x.append(current_model_.x[k])
                 self.y.append(current_model_.y[k])
 
-
-
-
-def compute_likelihood(x_dobs, y_dobs, x_i, y_i):
-    likelihood = 0
-    for j in range(len(x_dobs)):
+    def birth(self, current_model_):
+        self.npa += 1  # increasing number of partitions
+        sigma2 = 5
+        print('npa after birth', self.npa)
+        for k in range(self.npa - 1):
+            self.x.append(current_model_.x[k])
+            self.y.append(current_model_.y[k])
+        self.x.append(np.random.uniform(x_min, x_max))  # x prior distribution
         distance = []
-        for nucleus in range(len(x_i)):
-            distance.append(abs(x_dobs[j] - x_i[nucleus]))
-            # print('distance', distance)
+        for nucleus in range(self.npa - 1):
+            distance.append(abs(self.x[self.npa] - self.x[nucleus]))
         index_min_dist = distance.index(min(distance))  # index of distance with the closest model point
-        # print('distance min index', index_min_dist)
-        likelihood += pow((y_dobs[j] - y_i[index_min_dist]) / sigma, 2)
-    return likelihood
+        self.y.append(np.random.normal(self.y[index_min_dist], sigma2))
+
+    '''def compute_acceptance(self):
+        if self.curr_perturbation == "move":
+            # Compute likelihood of the proposed model
+            proposed_likelihood = compute_likelihood(x_dobs, y_dobs, proposed_model.x, proposed_model.y)
+            # print('proposed likelihood', proposed_likelihood)
+
+            # Compute prior of the proposed model (i.e. check if npa, x and y within bounds)
+            prior = 1
+            if proposed_model.npa < initial_model.npa_min or proposed_model.npa > initial_model.npa_max:
+                prior = 0
+            else:
+                for i in range(len(proposed_model.x)):
+                    if proposed_model.x[i] > x_max or proposed_model.x[i] < x_min or \
+                            proposed_model.y[i] > max(y_dobs) or proposed_model.y[i] < min(y_dobs):
+                        prior = 0
+            # print("prior", prior)
+
+            return prior * proposed_likelihood / current_likelihood  # acceptance term
+
+        if self.curr_perturbation == "birth":
+            return math.log(sigma2 * math.sqrt(2*math.pi) / (max(y_dobs) - min(y_dobs))) * math.pow(2 * sigma2, 2)'''
+
+    def compute_likelihood(self, x_dobs, y_dobs):
+        phi = 0
+        for j in range(len(x_dobs)):
+            distance = []
+            for nucleus in range(len(self.x)):
+                distance.append(abs(x_dobs[j] - self.x[nucleus]))
+                # print('distance', distance)
+            index_min_dist = distance.index(min(distance))  # index of distance with the closest model point
+            # print('distance min index', index_min_dist)
+            phi += pow((y_dobs[j] - self.y[index_min_dist]) / sigma, 2)
+        return math.exp(-(1/2) * phi)
 
 
 def draw_fit_curve(initial_model, mean_x, mean_y):
@@ -191,32 +228,26 @@ initial_model.build_initial_model(x_min, x_max, y_dobs)
 print(initial_model.x, initial_model.y, initial_model.npa)
 
 # Compute likelihood for the initial model
-current_likelihood = compute_likelihood(x_dobs, y_dobs, initial_model.x, initial_model.y)
+current_likelihood = initial_model.compute_likelihood(x_dobs, y_dobs)
 # print('first likelihood', current_likelihood)
-# print('initial model', initial_model)
 
 # Set RJMCMC variables
 current_model = initial_model
-burn_in = 10  # length of the burn-in period
-nsamples = 50  # total number of samples
+burn_in = 10000  # length of the burn-in period
+nsamples = 50000  # total number of samples
 accepted_models = 0  # number of accepted models
 rejected_models = 0  # number of rejected models
 model_space = []  # model space we want to sample
 
 for sample in range(nsamples):
     u = random()
-
-    # utiliser un bool de 1/3 pour choisir l action a realiser ?
-
+    # print('u', u)
     # Build proposed model with a perturbation from current model
     proposed_model = Model()
     proposed_model.build_proposed_model(current_model)
-    print("proposed model x ", proposed_model.x)
-    print('proposed model y', proposed_model.y)
 
     # Compute likelihood of the proposed model
-    proposed_likelihood = compute_likelihood(x_dobs, y_dobs, proposed_model.x, proposed_model.y)
-    # print('proposed likelihood', proposed_likelihood)
+    proposed_likelihood = proposed_model.compute_likelihood(x_dobs, y_dobs)
 
     # Compute prior of the proposed model (i.e. check if npa, x and y within bounds)
     prior = 1
@@ -229,16 +260,16 @@ for sample in range(nsamples):
                 prior = 0
     # print("prior", prior)
 
-    alpha = prior * proposed_likelihood / current_likelihood  # acceptance term
+    alpha = prior * (proposed_likelihood / current_likelihood)  # acceptance term
     # print('alpha', alpha)
-    if alpha > abs(math.log(u)):  # if accepted
+    if alpha >= u:  # if accepted
         current_model = proposed_model
         current_likelihood = proposed_likelihood
         accepted_models += 1
-        print("model accepted")
+        # print("model accepted")
     else:  # if rejected
         rejected_models += 1
-        print("model rejected")
+        # print("model rejected")
 
     # Collect models in the chain if burn-in period has passed
     if sample >= burn_in:
@@ -275,9 +306,9 @@ print('mean', statistics.mean(npa_number))
 print('std', statistics.stdev(npa_number))
 
 # Figure plot
-#plt.scatter(x_dobs, y_dobs, c='green', label='observed data')
+plt.scatter(x_dobs, y_dobs, c='green', label='observed data')
 plt.scatter(initial_model.x, initial_model.y, c='blue', label='initial model')
-plt.scatter(current_model.x, current_model.y, c='orange', label='last model')
+plt.scatter(current_model.x, current_model.y, c='orange', label='last accepted model')
 plt.scatter(mean_x, mean_y, c='purple', label='mean model')
 plt.xlim([x_min, x_max])
 plt.ylim([y_min, y_max])
