@@ -1,11 +1,11 @@
 """
 This script recreates the piecewise constant regression example presented in "Transdimensional inference in the
-geosciences" paper (Sambridge et al. 2013) using transdimensional inversions with a Voronoi nuclei parameterization.
+geosciences" paper (Sambridge et al. 2013) using transdimensional inversion with a Voronoi nuclei parameterization.
 Through a random initial prior model, observed data, and RJMCMC iterations, perturbations as moves, births and deaths of
 Voronoi nuclei are proposed to explore the model space and converge to likely solutions in different dimensions.
 At the end, it is possible to extract a smooth mean model that aims to fit the true model as fine as possible.
 The y coordinate of model partitions is the parameter of interest in the Bayesian inversion. The model dimension k
-concerns the number of model partitions, each being defined by Voronoi nuclei.
+concerns the number of model partitions, each being defined by a Voronoi nucleus.
 """
 
 __author__ = "Julien Herrero"
@@ -26,8 +26,6 @@ class Model:
         x (float list): x coordinate of each nucleus
         y (float list): y coordinate of each nucleus
         npa (int): number of partitions
-        npa_min (int): minimal possible number of partitions
-        npa_max (int): maximal possible number of partitions
         phi (float): misfit function which quantifies the agreement between simulated and observed data
         birth_param (tuple): store nucleus birth parameterization
         death_param (tuple): store nucleus death parameterization
@@ -39,24 +37,24 @@ class Model:
         """
         self.x = []
         self.y = []
-        self.npa_min = int
-        self.npa_max = int
         self.npa = int
         self.phi = float
         self.birth_param = tuple
         self.death_param = tuple
         self.curr_perturbation = str
 
-    def build_initial_model(self, boundaries, y_dobs):
+    def build_initial_model(self, boundaries, y_dobs, npa_min, npa_max):
         """Build the initial model of the chain from a uniform prior distribution
         :param boundaries: x-y minimal and maximal coordinates in the field
         :param y_dobs: y coordinates of observed data used as y min-max coordinates
+        :param npa_min: minimal possible number of partitions for the model
+        :param npa_max: maximal possible number of partitions for the model
         :type boundaries: int numpy array(2,2)
         :type y_dobs: float list
+        :type npa_min: int
+        :type npa_max: int
         """
-        self.npa_min = 1  # min number of partitions
-        self.npa_max = 50  # max number of partitions
-        self.npa = np.random.randint(self.npa_min, self.npa_max + 1)  # number of partitions
+        self.npa = np.random.randint(npa_min, npa_max + 1)  # number of partitions
         x_min = boundaries[0][0]
         x_max = boundaries[1][0]
         for k in range(self.npa):
@@ -71,8 +69,6 @@ class Model:
         :type boundaries: int numpy array(2,2)
         """
         self.npa = current_model.npa
-        self.npa_min = current_model.npa_min
-        self.npa_max = current_model.npa_max
         perturb_type = np.random.random_sample()  # random number to choose the perturbation type to apply
         if perturb_type < 0.33:
             self.curr_perturbation = "move"
@@ -220,17 +216,21 @@ class Model:
                 self.x.append(current_model.x[k])
                 self.y.append(current_model.y[k])
 
-    def compute_prior(self, boundaries, y_dobs):
+    def compute_prior(self, boundaries, y_dobs, npa_min, npa_max):
         """Check if current model is in prior model bounds (i.e., npa, x and y within bounds) and if not prior
         probability is set to 0, meaning that the model will be automatically rejected in a MCMC chain
         :param boundaries: x-y minimal and maximal coordinates in the field
         :param y_dobs: y coordinates of observed data used as y min-max coordinates
+        :param npa_min: minimal possible number of partitions for the model
+        :param npa_max: maximal possible number of partitions for the model
         :type boundaries: int numpy array(2,2)
         :type y_dobs: float list
+        :type npa_min: int
+        :type npa_max: int
         :return: int prior probability after checking if the model is within boundaries (0 or 1)
         """
         prior = 1
-        if self.npa < self.npa_min or self.npa > self.npa_max:
+        if self.npa < npa_min or self.npa > npa_max:
             prior = 0
         else:
             x_min = boundaries[0][0]
@@ -292,7 +292,7 @@ class Model:
             plt.vlines(x=change_point, ymin=self.y[k - 1], ymax=self.y[k], color=color)
             x_min_line = change_point
         x_max = boundaries[1][0]
-        plt.hlines(y=self.y[len(self.y) - 1], xmin=change_point, xmax=x_max)
+        plt.hlines(y=self.y[len(self.y) - 1], xmin=change_point, xmax=x_max, color=color)
 
 
 def compute_true_model():
@@ -401,8 +401,26 @@ def compute_npa_numbers(model_space):
     return npa_number
 
 
+def plot_result(boundaries):
+    """Plot result of the transdimensional inversion
+    :param boundaries: x-y minimal and maximal coordinates in the field
+    :type boundaries: int numpy array(2,2)
+    """
+    x_min = boundaries[0][0]
+    x_max = boundaries[1][0]
+    y_min = boundaries[0][1]
+    y_max = boundaries[1][1]
+    plt.xlim([x_min, x_max])
+    plt.ylim([y_min, y_max])
+    plt.xlabel('x')
+    plt.ylabel('y', rotation=0)
+    plt.legend(loc='lower right')
+    plt.title('Piecewise constant regression')
+    plt.grid()
+
+
 def main():
-    np.random.seed(4)
+    np.random.seed(6)
 
     # Create observed data from the solution
     compute_true_model()
@@ -419,8 +437,11 @@ def main():
     boundaries = np.array(([x_min, y_min], [x_max, y_max]))
 
     # Build initial model
+    npa_min = 1  # min number of partitions
+    npa_max = 50  # max number of partitions
+    assert npa_min > 0, 'The partition number must be greater than 0'
     initial_model = Model()
-    initial_model.build_initial_model(boundaries, y_dobs)
+    initial_model.build_initial_model(boundaries, y_dobs, npa_min, npa_max)
     print("initial model:\nx =", initial_model.x, "\ny =", initial_model.y, "\nnumber of partitions =",
           initial_model.npa)
     initial_model.draw_lines(boundaries, 'b')
@@ -440,7 +461,7 @@ def main():
         proposed_model.build_proposed_model(current_model, boundaries)
 
         # Compute prior of the proposed model (i.e. check if npa, x and y within bounds)
-        prior = proposed_model.compute_prior(boundaries, y_dobs)
+        prior = proposed_model.compute_prior(boundaries, y_dobs, npa_min, npa_max)
         if prior == 0:  # if out of bounds reject the proposition
             rejected_models += 1
             if sample >= burn_in:  # store current model in the chain if burn-in period has passed
@@ -483,19 +504,13 @@ def main():
     plt.scatter(initial_model.x, initial_model.y, c='blue', marker='s', label='initial model')
     plt.scatter(max_likelihood_model.x, max_likelihood_model.y, c='green', marker='s', label='best fit model')
     plt.scatter(mean_model.x, mean_model.y, c='purple', marker='o', label='mean model')
-    plt.xlim([x_min, x_max])
-    plt.ylim([y_min, y_max])
-    plt.xlabel('x')
-    plt.ylabel('y', rotation=0)
-    plt.legend(loc='lower right')
-    plt.title('Regression problem')
-    plt.grid()
+    plot_result(boundaries)
 
     # Histograms of prior and posterior probabilities of model dimensions
     plt.figure(2)
-    plt.hist(npa_number, range=(initial_model.npa_min, initial_model.npa_max), density=True, color='purple',
-             edgecolor='black', bins=(initial_model.npa_max - initial_model.npa_min), label='posterior PDF')
-    plt.hist(initial_model.npa_max, range=(0, initial_model.npa_max), density=True, color='cyan', bins=1, alpha=0.5,
+    plt.hist(npa_number, range=(npa_min, npa_max), density=True, color='purple',
+             edgecolor='black', bins=(npa_max - npa_min), label='posterior PDF')
+    plt.hist(npa_max, range=(0, npa_max), density=True, color='cyan', bins=1, alpha=0.5,
              label='prior PDF')
     plt.vlines(x=9, ymin=0, ymax=0.3, linewidth=2, color='r', label='true model dimension')
     plt.xlabel('no. partitions')
