@@ -1,6 +1,6 @@
 """
-This script recreates the regression example presented in "Transdimensional inference in the geosciences" paper
-(Sambridge et al. 2013) using transdimensional inversions with a Voronoi nuclei parameterization.
+This script recreates the piecewise constant regression example presented in "Transdimensional inference in the
+geosciences" paper (Sambridge et al. 2013) using transdimensional inversions with a Voronoi nuclei parameterization.
 Through a random initial prior model, observed data, and RJMCMC iterations, perturbations as moves, births and deaths of
 Voronoi nuclei are proposed to explore the model space and converge to likely solutions in different dimensions.
 At the end, it is possible to extract a smooth mean model that aims to fit the true model as fine as possible.
