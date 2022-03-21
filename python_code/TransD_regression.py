@@ -14,10 +14,12 @@ __copyright__ = "RING Team"
 __date__ = "2022-03-01"
 __version__ = "1"
 
+import copy
 import sys
 import math
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.collections import LineCollection
 
 
 class Model:
@@ -79,25 +81,6 @@ class Model:
         else:
             self.curr_perturbation = "death"
             self.death(current_model)
-
-    def extract_mean_model(self, model_space):
-        """Extract the mean model according to a chosen step along x-axis by calculating the y coordinate mean of all
-        models stored in the model space for the given x coordinate. The y values are found with the closest Voronoi
-        nucleus from the step
-        Notes: it is possible to also extract the map error, by computing the y standard deviation
-        :param model_space: space sampled of post burn-in models to approximate the posterior probability density
-        :type model_space: numpy array(n_samples - burn-in) of Model objects
-        """
-        for x_step in (x * 0.5 for x in range(0, 21)):
-            stacked_y = []  # partition y values of all models at a given spatial step of the grid
-            for model in model_space:
-                distance = np.empty(model.npa, dtype=float)
-                for nucleus in range(model.npa - 1):
-                    distance[nucleus] = abs(x_step - model.x[nucleus])
-                index_min_dist = (np.where(distance == min(distance)))[0][0]
-                stacked_y.append(model.y[index_min_dist])
-            self.x.append(x_step)
-            self.y.append(np.mean(stacked_y))
 
     def move(self, current_model):
         """Propose a random move of nuclei as a perturbation of the model
@@ -401,8 +384,58 @@ def compute_npa_numbers(model_space):
     return npa_number
 
 
+def extract_model_stat_parameters(model_space, spatial_step, nb_points):
+    """Extract the model statistic parameters as a reference solution and a variance map (mean, median, errors...)
+    according to a chosen step along x-axis by calculating the y coordinate average of all
+    models stored in the model space for the given x coordinate. The y values are found with the closest Voronoi
+    nucleus from the step
+    :param model_space: space sampled of post burn-in models to approximate the posterior probability density
+    :param spatial_step: spatial discretization to respect along x-axis. A point is sampled at each spatial step
+    for the given number of points
+    :param nb_points: number of points to sample along x-axis
+    :type model_space: numpy array(n_samples - burn-in) of Model objects
+    :type spatial_step: float
+    :type nb_points: int
+    :return: statistical model parameters from model_space array
+    """
+    # Find model y parameter for the defined spatial sampling
+    x_coordinate = []  # x coordinate value at each given step
+    y_coordinate = []  # y coordinate value of all models at a given spatial step of the grid
+    for x_step in (x * spatial_step for x in range(0, nb_points + 1)):
+        x_coordinate.append(x_step)
+        y_val = []  # y coordinate value of a model at a given spatial step of the grid
+        for model in model_space:
+            distance = np.empty(model.npa, dtype=float)
+            for nucleus in range(model.npa):
+                distance[nucleus] = abs(x_step - model.x[nucleus])
+            index_min_dist = (np.where(distance == min(distance)))[0][0]
+            y_val.append(model.y[index_min_dist])
+        y_coordinate.append(y_val)
+
+    # Fill each statistical model
+    mean_model = Model()  # average field model
+    median_model = Model()  # median model
+    std_model_p = Model()  # variance (error) model
+    std_model_m = Model()  # variance (error) model
+    min_model = Model()  # min-values model
+    max_model = Model()  # max-values model
+    p5_model = Model()  # 95% credible interval model
+    p95_model = Model()  # 95% credible interval model
+    for spatial_step in range(len(x_coordinate)):
+        mean_model.x.append(x_coordinate[spatial_step])
+        mean_model.y.append(np.mean(y_coordinate[spatial_step]))
+        median_model.y.append(np.median(y_coordinate[spatial_step]))
+        std_model_p.y.append(mean_model.y[spatial_step] + np.std(y_coordinate[spatial_step]))
+        std_model_m.y.append(mean_model.y[spatial_step] - np.std(y_coordinate[spatial_step]))
+        min_model.y.append(np.min(y_coordinate[spatial_step]))
+        max_model.y.append(np.max(y_coordinate[spatial_step]))
+        p5_model.y.append(np.quantile(y_coordinate[spatial_step], .05))
+        p95_model.y.append(np.quantile(y_coordinate[spatial_step], .95))
+    return mean_model, median_model, std_model_p, std_model_m, min_model, max_model, p5_model, p95_model
+
+
 def plot_result(boundaries):
-    """Plot result of the transdimensional inversion
+    """Plot dimensions of the transdimensional inversion result
     :param boundaries: x-y minimal and maximal coordinates in the field
     :type boundaries: int numpy array(2,2)
     """
@@ -419,8 +452,41 @@ def plot_result(boundaries):
     plt.grid()
 
 
+def plot_density(model_space, nx, ny, boundaries):
+    """Build a 2D regular mesh with a specified discretization step storing the posterior distribution density of
+    the parameter (y coordinate) of the models. The result mesh only needs to be plotted after this computation
+    :param model_space: space sampled of post burn-in models to approximate the posterior probability density
+    :param nx: number of cells to discretize along x-axis in the density plot result
+    :param ny: number of cells to discretize along y-axis in the density plot result
+    :param boundaries: x-y minimal and maximal coordinates in the field
+    :type model_space: numpy array(n_samples - burn-in) of Model objects
+    :type nx: int
+    :type ny: int
+    :type boundaries: int numpy array(2,2)
+    :return: 2D regular grid owning the y parameter density for all models
+    """
+    x_min = boundaries[0][0]
+    x_max = boundaries[1][0]
+    y_min = boundaries[0][1]
+    y_max = boundaries[1][1]
+    x_mesh, y_mesh = np.meshgrid(np.linspace(x_min, x_max, nx), np.linspace(y_min, y_max, ny), indexing='xy')
+    z = np.zeros((nx, ny), dtype=float)
+    for i in range(nx):
+        for j in range(ny):
+            counter = 0
+            for model in model_space:
+                distance = np.empty(model.npa, dtype=float)
+                for nucleus in range(model.npa):
+                    distance[nucleus] = abs(x_mesh[j - 1, i] - model.x[nucleus])
+                index_min_dist = (np.where(distance == min(distance)))[0][0]
+                if y_mesh[j - 1, i] <= model.y[index_min_dist] <= y_mesh[j, i]:
+                    counter += 1
+            z[j - 1, i] = counter / len(model_space)
+    return x_mesh, y_mesh, z
+
+
 def main():
-    np.random.seed(6)
+    np.random.seed(11)
 
     # Create observed data from the solution
     compute_true_model()
@@ -444,7 +510,7 @@ def main():
     initial_model.build_initial_model(boundaries, y_dobs, npa_min, npa_max)
     print("initial model:\nx =", initial_model.x, "\ny =", initial_model.y, "\nnumber of partitions =",
           initial_model.npa)
-    initial_model.draw_lines(boundaries, 'b')
+    initial_model.draw_lines(boundaries, 'gold')
     initial_model.compute_phi(sigma, x_dobs, y_dobs)  # initial model misfit
 
     # Set RJMCMC variables
@@ -493,18 +559,33 @@ def main():
     max_likelihood_model = extract_best_fit_model(model_space, sigma, x_dobs)
     max_likelihood_model.draw_lines(boundaries, 'green')
 
-    # Take the mean model from model space
-    mean_model = Model()
-    mean_model.extract_mean_model(model_space)
+    # Extract statistical information from model space
+    spatial_step = 0.1  # x-axis discretization
+    nb_points = 100  # number of points used to discretize the result along x-axis
+    mean_model, median_model, std_model_p, std_model_m, min_model, max_model, p5_model, p95_model = \
+        extract_model_stat_parameters(model_space, spatial_step, nb_points)
+
+    # Build a density plot of the posterior distribution
+    print("\nPosterior distribution density plot running...")
+    nx, ny = (41, 41)  # axes discretization
+    x_mesh, y_mesh, z = plot_density(model_space, nx, ny, boundaries)
 
     # Figure plot
 
     # Model curves and points
     plt.scatter(x_dobs, y_dobs, c='orange', label='observed data')
-    plt.scatter(initial_model.x, initial_model.y, c='blue', marker='s', label='initial model')
+    plt.scatter(initial_model.x, initial_model.y, c='gold', marker='s', label='initial model')
     plt.scatter(max_likelihood_model.x, max_likelihood_model.y, c='green', marker='s', label='best fit model')
-    plt.scatter(mean_model.x, mean_model.y, c='purple', marker='o', label='mean model')
+    #plt.scatter(mean_model.x, mean_model.y, c='purple', marker='o', label='mean model')
+    #plt.scatter(mean_model.x, median_model.y, c='turquoise', marker='o', label='median model')
+    #plt.scatter(mean_model.x, std_model_p.y, c='black', marker=0, label='std model')
+    #plt.scatter(mean_model.x, std_model_m.y, c='black', marker=0)
+    #plt.scatter(mean_model.x, min_model.y, c='cornflowerblue', marker='o', label='min model')
+    #plt.scatter(mean_model.x, max_model.y, c='firebrick', marker='o', label='max model')
+    #plt.scatter(mean_model.x, p5_model.y, c='slategray', marker=0, label='95% credible interval')
+    #plt.scatter(mean_model.x, p95_model.y, c='slategray', marker=0)
     plot_result(boundaries)
+    plt.show()
 
     # Histograms of prior and posterior probabilities of model dimensions
     plt.figure(2)
@@ -517,6 +598,23 @@ def main():
     plt.ylabel('frequency in posterior ensemble')
     plt.legend(loc='upper right')
     plt.title('p(np|d)')
+    plt.show()
+
+    # Model posterior distribution density plot
+    plt.figure(3)
+    plt.plot(x_mesh, y_mesh, color='black')
+    plt.plot(np.transpose(x_mesh), np.transpose(y_mesh), color='black')
+    cmap = copy.copy(plt.cm.get_cmap('OrRd'))
+    cmap.set_under(color='white')
+    plt.contourf(x_mesh, y_mesh, z, cmap=cmap, vmin=0.05)
+    y_step = ((abs(y_min) + abs(y_max)) / (ny - 1)) / 2
+    plt.contourf(x_mesh, y_mesh + y_step, z, cmap=cmap, vmin=0.05)
+    plt.colorbar()
+    plt.xlim([x_min, x_max])
+    plt.ylim([y_min, y_max])
+    plt.xlabel('x')
+    plt.ylabel('model density')
+    plt.title('Posterior distribution density')
     plt.show()
 
 
