@@ -576,7 +576,7 @@ def main():
     plt.scatter(x_dobs, y_dobs, c='orange', label='observed data')
     plt.scatter(initial_model.x, initial_model.y, c='gold', marker='s', label='initial model')
     plt.scatter(max_likelihood_model.x, max_likelihood_model.y, c='green', marker='s', label='best fit model')
-    #plt.scatter(mean_model.x, mean_model.y, c='purple', marker='o', label='mean model')
+    #plt.scatter(mean_model.x, mean_model.y, c='plum', marker='o', label='mean model')
     #plt.scatter(mean_model.x, median_model.y, c='turquoise', marker='o', label='median model')
     #plt.scatter(mean_model.x, std_model_p.y, c='black', marker=0, label='std model')
     #plt.scatter(mean_model.x, std_model_m.y, c='black', marker=0)
