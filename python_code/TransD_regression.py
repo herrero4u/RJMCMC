@@ -470,7 +470,7 @@ def plot_density(model_space, nx, ny, boundaries):
     y_min = boundaries[0][1]
     y_max = boundaries[1][1]
     x_mesh, y_mesh = np.meshgrid(np.linspace(x_min, x_max, nx), np.linspace(y_min, y_max, ny), indexing='xy')
-    z = np.zeros((nx, ny), dtype=float)
+    z = np.zeros((ny, nx), dtype=float)
     for i in range(nx):
         for j in range(ny):
             counter = 0
@@ -505,7 +505,8 @@ def main():
     # Build initial model
     npa_min = 1  # min number of partitions
     npa_max = 50  # max number of partitions
-    assert npa_min > 0, 'The partition number must be greater than 0'
+    assert npa_max >= npa_min > 0, 'The minimal partition number must be greater than 0 and the maximal partition ' \
+                                   'number must be greater or equal to the minimal number'
     initial_model = Model()
     initial_model.build_initial_model(boundaries, y_dobs, npa_min, npa_max)
     print("initial model:\nx =", initial_model.x, "\ny =", initial_model.y, "\nnumber of partitions =",
@@ -528,7 +529,7 @@ def main():
 
         # Compute prior of the proposed model (i.e. check if npa, x and y within bounds)
         prior = proposed_model.compute_prior(boundaries, y_dobs, npa_min, npa_max)
-        if prior == 0:  # if out of bounds reject the proposition
+        if (prior == 0) or (proposed_model.curr_perturbation == "nothing"):  # if out of bounds reject the proposition
             rejected_models += 1
             if sample >= burn_in:  # store current model in the chain if burn-in period has passed
                 model_space[sample - burn_in] = current_model
@@ -590,8 +591,8 @@ def main():
     # Histograms of prior and posterior probabilities of model dimensions
     plt.figure(2)
     plt.hist(npa_number, range=(npa_min, npa_max), density=True, color='purple',
-             edgecolor='black', bins=(npa_max - npa_min), label='posterior PDF')
-    plt.hist(npa_max, range=(0, npa_max), density=True, color='cyan', bins=1, alpha=0.5,
+             edgecolor='black', bins=((npa_max - npa_min) + 1), label='posterior PDF')
+    plt.hist(npa_max, range=(npa_min, npa_max), density=True, color='cyan', bins=1, alpha=0.5,
              label='prior PDF')
     plt.vlines(x=9, ymin=0, ymax=0.3, linewidth=2, color='r', label='true model dimension')
     plt.xlabel('no. partitions')
